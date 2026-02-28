@@ -1,0 +1,57 @@
+{
+  "adv1": {
+    "previewFile": "adv1-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 64
+  },
+  "adv2": {
+    "previewFile": "adv2-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 32
+  },
+  "adv3": {
+    "previewFile": "adv3-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 32
+  },
+  "beginner": {
+    "previewFile": "beginner-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 29
+  },
+  "hangul": {
+    "previewFile": "hangul-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 14
+  },
+  "inter1": {
+    "previewFile": "inter1-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 30
+  },
+  "inter2": {
+    "previewFile": "inter2-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 36
+  },
+  "inter3": {
+    "previewFile": "inter3-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 42
+  },
+  "spinA": {
+    "previewFile": "spinA-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 28
+  },
+  "spinB": {
+    "previewFile": "spinB-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 34
+  },
+  "spinC": {
+    "previewFile": "spinC-preview.pdf",
+    "previewPages": 3,
+    "totalPages": 26
+  }
+}

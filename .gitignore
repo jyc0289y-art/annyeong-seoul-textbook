@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+
+# 원본 PDF (절대 커밋 금지! 로컬에만 보관)
+public/pdfs/
+
+# 암호화 키 (절대 커밋 금지!)
+scripts/keys.json
+
+# 아래는 커밋 대상 (빌드 결과물이지만 Git에 포함)
+# public/pdfs-encrypted/  ← 암호화된 파일, 커밋 OK
+# public/previews/        ← 미리보기 PDF, 커밋 OK

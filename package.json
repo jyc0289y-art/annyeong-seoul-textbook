@@ -1,0 +1,22 @@
+{
+  "name": "annyeong-seoul-textbook",
+  "version": "1.1.0",
+  "description": "안녕, 서울 - Korean Language Textbook Viewer with Copyright Protection",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "build:encrypt": "node scripts/encrypt-pdfs.js",
+    "build:preview": "node scripts/generate-previews.js",
+    "build:all": "node scripts/encrypt-pdfs.js && node scripts/generate-previews.js && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "firebase": "^11.0.0",
+    "pdfjs-dist": "^4.7.76"
+  },
+  "devDependencies": {
+    "pdf-lib": "^1.17.1",
+    "vite": "^6.0.0"
+  }
+}
