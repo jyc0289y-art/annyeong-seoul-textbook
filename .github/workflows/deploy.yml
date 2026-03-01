@@ -26,6 +26,11 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # 암호화 키를 GitHub Secret에서 복원 (관리자/접근코드 사용자의 PDF 복호화용)
+      - name: Restore decryption keys
+        run: echo '${{ secrets.DEMO_KEYS }}' > public/demo-keys.json
+
       - run: npm run build
 
       # 안전 확인: dist/pdfs/ 폴더가 있으면 제거
