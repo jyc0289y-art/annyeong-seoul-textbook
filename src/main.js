@@ -1,6 +1,7 @@
 import { onAuthChange } from './firebase.js';
 import { renderCatalog } from './pages/catalog.js';
 import { renderViewer } from './pages/viewer.js';
+import { renderAdmin } from './pages/admin.js';
 import { installCopyrightGuard } from './components/copyright-guard.js';
 
 const app = document.getElementById('app');
@@ -24,6 +25,9 @@ function router() {
   switch (path) {
     case 'viewer':
       renderViewer(app, params);
+      break;
+    case 'admin':
+      renderAdmin(app, params);
       break;
     case 'catalog':
     default:

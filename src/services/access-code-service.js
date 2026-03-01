@@ -4,6 +4,7 @@
  * 데모 모드: 로컬 검증 (기존 방식)
  */
 import { isFirebaseConfigured } from '../firebase.js';
+import { isAdminLoggedIn, isStudentViewEnabled } from './admin-service.js';
 
 /**
  * Firestore에서 접근 코드 검증 (Firebase 설정 후 활성화)
@@ -49,6 +50,11 @@ export async function verifyAccessCode(bookId, code, userId) {
  * @returns {boolean}
  */
 export async function checkAccess(bookId, userId) {
+  // 관리자 모드: 학생 모드가 아니면 전체 접근 허용
+  if (isAdminLoggedIn() && !isStudentViewEnabled()) {
+    return true;
+  }
+
   if (isFirebaseConfigured()) {
     // TODO: Firestore userAccess 컬렉션 확인
     return false;

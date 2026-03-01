@@ -1,15 +1,18 @@
 import { BOOKS, CATEGORIES } from '../config/books.js';
 import { getCurrentUser, loginWithGoogle, loginWithApple, logout } from '../firebase.js';
+import { isAdminLoggedIn } from '../services/admin-service.js';
 
 let activeCategory = 'all';
 
 export function renderCatalog(container) {
   const user = getCurrentUser();
+  const isAdmin = isAdminLoggedIn();
 
   container.innerHTML = `
     <header class="site-header">
-      <div class="logo"><span>SeouLink</span> | 안녕, 서울</div>
+      <div class="logo"><span>SeouLink</span> | 안녕, 서울 ${isAdmin ? '<span class="admin-badge">ADMIN</span>' : ''}</div>
       <div class="nav-actions">
+        ${isAdmin ? '<button class="btn btn-ghost" id="admin-panel-btn" style="font-size:0.75rem">관리자 설정</button>' : ''}
         ${user
           ? `<span style="color:var(--text-secondary);font-size:0.85rem">${user.displayName || user.email}</span>
              <button class="btn btn-ghost" id="logout-btn">로그아웃</button>`
@@ -99,6 +102,13 @@ function bindEvents(container) {
     logoutBtn.addEventListener('click', async () => {
       await logout();
       renderCatalog(container);
+    });
+  }
+
+  const adminPanelBtn = container.querySelector('#admin-panel-btn');
+  if (adminPanelBtn) {
+    adminPanelBtn.addEventListener('click', () => {
+      window.location.hash = '#admin';
     });
   }
 }

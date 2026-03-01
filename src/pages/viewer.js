@@ -4,6 +4,9 @@ import { getCurrentUser, loginWithGoogle, loginWithApple } from '../firebase.js'
 import { drawWatermark } from '../components/watermark.js';
 import { decryptPdf, loadPreviewPdf } from '../services/pdf-decrypt-service.js';
 import { verifyAccessCode, checkAccess, grantAccess } from '../services/access-code-service.js';
+import { isAdminLoggedIn } from '../services/admin-service.js';
+import { initAnnotationCanvas, resizeAnnotationCanvas, loadPageAnnotations, saveCurrentAnnotations, isAnnotationModeActive } from '../components/annotation-canvas.js';
+import { createAnnotationToolbar, destroyAnnotationToolbar } from '../components/annotation-toolbar.js';
 
 // PDF.js worker 설정
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -43,7 +46,7 @@ export async function renderViewer(container, params) {
       ${embed ? '' : `
       <div class="viewer-toolbar">
         <button class="back-btn" id="back-btn">&larr; 목록</button>
-        <span class="book-title">${currentBook.title_ko}</span>
+        <span class="book-title">${currentBook.title_ko} ${isAdminLoggedIn() ? '<span class="admin-badge-sm">ADMIN</span>' : ''}</span>
         <div class="page-info">
           <button class="page-nav-btn" id="prev-btn">&lsaquo;</button>
           <span id="page-display">- / -</span>
@@ -68,6 +71,14 @@ export async function renderViewer(container, params) {
       </div>
     </div>
   `;
+
+  // 필기 캔버스 초기화
+  const pageWrapper = document.getElementById('page-wrapper');
+  initAnnotationCanvas(pageWrapper);
+
+  // 필기 도구 모음 생성
+  const viewerContainer = container.querySelector('.viewer-container');
+  createAnnotationToolbar(viewerContainer);
 
   try {
     if (hasFullAccess) {
@@ -180,6 +191,7 @@ async function renderPage(pageNum) {
 
   setCanvasSize(pdfCanvas, finalViewport.width, finalViewport.height);
   setCanvasSize(wmCanvas, finalViewport.width, finalViewport.height);
+  resizeAnnotationCanvas(finalViewport.width, finalViewport.height);
 
   await page.render({
     canvasContext: pdfCanvas.getContext('2d'),
@@ -188,6 +200,11 @@ async function renderPage(pageNum) {
 
   const user = getCurrentUser();
   drawWatermark(wmCanvas, user?.displayName || user?.email);
+
+  // 필기 데이터 로드
+  if (currentBook) {
+    await loadPageAnnotations(currentBook.id, pageNum);
+  }
 
   updatePageDisplay(pageNum, totalPages);
   currentPage = pageNum;
@@ -266,6 +283,8 @@ function bindViewerEvents(container) {
       touchStartX = e.touches[0].clientX;
     }, { passive: true });
     viewerBody.addEventListener('touchend', (e) => {
+      // 필기 모드에서는 스와이프 페이지 전환 비활성화
+      if (isAnnotationModeActive()) return;
       const diff = e.changedTouches[0].clientX - touchStartX;
       if (Math.abs(diff) > 60) {
         goPage(diff < 0 ? 1 : -1);
@@ -274,7 +293,10 @@ function bindViewerEvents(container) {
   }
 }
 
-function goPage(delta) {
+async function goPage(delta) {
+  // 페이지 전환 전 현재 필기 저장
+  await saveCurrentAnnotations();
+
   const maxPage = hasFullAccess ? totalPages : previewPages;
   const newPage = currentPage + delta;
   if (newPage < 1) return;

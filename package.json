@@ -8,6 +8,7 @@
     "build": "vite build",
     "build:encrypt": "node scripts/encrypt-pdfs.js",
     "build:preview": "node scripts/generate-previews.js",
+    "build:keys": "node scripts/generate-demo-keys.js",
     "build:all": "node scripts/encrypt-pdfs.js && node scripts/generate-previews.js && vite build",
     "preview": "vite preview"
   },
