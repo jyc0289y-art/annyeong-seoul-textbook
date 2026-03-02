@@ -1,22 +1,85 @@
 /**
  * 접근 코드 서비스
- * Firebase 설정 시: Firestore에서 검증
+ * Firebase 설정 시: Firestore에서 검증 + 접근 권한 관리
  * 데모 모드: 로컬 검증 (기존 방식)
+ *
+ * Firestore 컬렉션 구조:
+ *   accessCodes/{codeId} - 접근 코드 목록
+ *   userAccess/{userId_bookId} - 사용자별 접근 권한
  */
 import { isFirebaseConfigured } from '../firebase.js';
 import { isAdminLoggedIn, isStudentViewEnabled } from './admin-service.js';
 
 /**
- * Firestore에서 접근 코드 검증 (Firebase 설정 후 활성화)
+ * Firestore에서 접근 코드 검증
+ * @param {string} bookId - 교재 ID (빈 문자열이면 전체 교재)
+ * @param {string} code - 입력된 접근 코드
+ * @param {string} userId - 사용자 UID
+ * @returns {boolean} 검증 성공 여부
  */
 async function verifyCodeFirestore(bookId, code, userId) {
-  // TODO: Firebase 프로젝트 설정 후 구현
-  // const { getFirestore, collection, query, where, getDocs, addDoc, updateDoc, increment } = await import('firebase/firestore');
-  // const db = getFirestore();
-  // 1. accessCodes 컬렉션에서 code + bookId + active=true 검색
-  // 2. maxUses 확인, currentUses 증가
-  // 3. userAccess에 접근 권한 기록
-  return false;
+  try {
+    const { collection, query, where, getDocs, doc, setDoc, updateDoc, increment, serverTimestamp } = await import('firebase/firestore');
+    const { db } = await import('../firebase.js');
+
+    if (!db) return false;
+
+    // 1. accessCodes 컬렉션에서 코드 검색
+    //    - 특정 교재용 코드: bookId 일치 + active=true
+    //    - 만능 코드: bookId="" + active=true
+    const codesRef = collection(db, 'accessCodes');
+    const q = query(
+      codesRef,
+      where('code', '==', code),
+      where('active', '==', true)
+    );
+
+    const snapshot = await getDocs(q);
+
+    if (snapshot.empty) {
+      console.log(`[AccessCode] Code not found or inactive: ${code}`);
+      return false;
+    }
+
+    // 2. 유효한 코드 찾기 (bookId 일치 또는 만능 코드)
+    let validCodeDoc = null;
+    snapshot.forEach(docSnap => {
+      const data = docSnap.data();
+      if (data.bookId === bookId || data.bookId === '') {
+        // maxUses 확인 (0이면 무제한)
+        if (data.maxUses === 0 || data.currentUses < data.maxUses) {
+          validCodeDoc = { id: docSnap.id, ...data };
+        }
+      }
+    });
+
+    if (!validCodeDoc) {
+      console.log(`[AccessCode] Code expired or max uses reached: ${code}`);
+      return false;
+    }
+
+    // 3. currentUses 증가
+    const codeDocRef = doc(db, 'accessCodes', validCodeDoc.id);
+    await updateDoc(codeDocRef, {
+      currentUses: increment(1)
+    });
+
+    // 4. userAccess에 접근 권한 기록
+    const accessDocId = `${userId}_${bookId}`;
+    await setDoc(doc(db, 'userAccess', accessDocId), {
+      userId: userId,
+      bookId: bookId,
+      code: code,
+      grantedAt: serverTimestamp(),
+      status: 'active'
+    });
+
+    console.log(`[AccessCode] Access granted via Firestore: ${bookId} for ${userId}`);
+    return true;
+  } catch (error) {
+    console.error('[AccessCode] Firestore verification error:', error.message);
+    return false;
+  }
 }
 
 /**
@@ -38,7 +101,10 @@ function verifyCodeDemo(bookId, code) {
  */
 export async function verifyAccessCode(bookId, code, userId) {
   if (isFirebaseConfigured()) {
-    return await verifyCodeFirestore(bookId, code, userId);
+    const result = await verifyCodeFirestore(bookId, code, userId);
+    if (result) return true;
+    // Firestore 실패 시 데모 코드도 허용 (점진적 전환)
+    return verifyCodeDemo(bookId, code);
   }
   return verifyCodeDemo(bookId, code);
 }
@@ -56,11 +122,38 @@ export async function checkAccess(bookId, userId) {
   }
 
   if (isFirebaseConfigured()) {
-    // TODO: Firestore userAccess 컬렉션 확인
-    return false;
+    try {
+      const { doc, getDoc } = await import('firebase/firestore');
+      const { db } = await import('../firebase.js');
+
+      if (!db) return checkAccessLocal(bookId);
+
+      // Firestore에서 접근 권한 확인
+      const accessDocId = `${userId}_${bookId}`;
+      const accessDoc = await getDoc(doc(db, 'userAccess', accessDocId));
+
+      if (accessDoc.exists()) {
+        const data = accessDoc.data();
+        if (data.status === 'active') {
+          return true;
+        }
+      }
+
+      // Firestore에 없으면 로컬 스토리지도 확인 (하위 호환)
+      return checkAccessLocal(bookId);
+    } catch (error) {
+      console.warn('[AccessCode] Firestore access check failed, using local:', error.message);
+      return checkAccessLocal(bookId);
+    }
   }
 
-  // 데모 모드: localStorage 사용
+  return checkAccessLocal(bookId);
+}
+
+/**
+ * 로컬 스토리지에서 접근 권한 확인 (데모/폴백)
+ */
+function checkAccessLocal(bookId) {
   const accessStore = JSON.parse(localStorage.getItem('sl_access') || '{}');
   return !!accessStore[bookId];
 }
@@ -73,11 +166,27 @@ export async function checkAccess(bookId, userId) {
  */
 export async function grantAccess(bookId, code, userId) {
   if (isFirebaseConfigured()) {
-    // TODO: Firestore에 접근 권한 기록
-    return;
+    try {
+      const { doc, setDoc, serverTimestamp } = await import('firebase/firestore');
+      const { db } = await import('../firebase.js');
+
+      if (db) {
+        const accessDocId = `${userId}_${bookId}`;
+        await setDoc(doc(db, 'userAccess', accessDocId), {
+          userId: userId,
+          bookId: bookId,
+          code: code,
+          grantedAt: serverTimestamp(),
+          status: 'active'
+        });
+        console.log(`[AccessCode] Access saved to Firestore: ${bookId}`);
+      }
+    } catch (error) {
+      console.warn('[AccessCode] Firestore save failed, using local:', error.message);
+    }
   }
 
-  // 데모 모드: localStorage에 저장
+  // 항상 로컬에도 저장 (오프라인/폴백용)
   const accessStore = JSON.parse(localStorage.getItem('sl_access') || '{}');
   accessStore[bookId] = { code, grantedAt: Date.now() };
   localStorage.setItem('sl_access', JSON.stringify(accessStore));

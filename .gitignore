@@ -10,6 +10,12 @@ public/pdfs/
 scripts/keys.json
 public/demo-keys.json
 
+# Firebase
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+firestore-debug.log
+
 # 아래는 커밋 대상 (빌드 결과물이지만 Git에 포함)
 # public/pdfs-encrypted/  ← 암호화된 파일, 커밋 OK
 # public/previews/        ← 미리보기 PDF, 커밋 OK

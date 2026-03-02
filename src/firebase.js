@@ -1,18 +1,20 @@
-// Firebase 초기화
-// TODO: Firebase 프로젝트 생성 후 아래 config를 실제 값으로 교체하세요
-// https://console.firebase.google.com/ 에서 프로젝트 생성
+/**
+ * Firebase 초기화
+ * 환경변수(VITE_FIREBASE_*)가 설정되면 실제 Firebase에 연결
+ * 미설정 시 데모 모드로 동작 (개발/테스트용)
+ */
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, OAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "YOUR_API_KEY",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN || "YOUR_PROJECT.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID || "YOUR_PROJECT_ID",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || "YOUR_PROJECT.appspot.com",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID || "YOUR_SENDER_ID",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID || "YOUR_APP_ID"
 };
 
 // Firebase가 설정되지 않은 경우 더미 모드로 동작
@@ -23,26 +25,40 @@ let auth = null;
 let db = null;
 
 if (isConfigured) {
-  app = initializeApp(firebaseConfig);
-  auth = getAuth(app);
-  db = getFirestore(app);
+  try {
+    app = initializeApp(firebaseConfig);
+    auth = getAuth(app);
+    db = getFirestore(app);
+    console.log('[Firebase] Initialized with project:', firebaseConfig.projectId);
+  } catch (error) {
+    console.warn('[Firebase] Initialization failed, falling back to demo mode:', error.message);
+  }
+} else {
+  console.log('[Firebase] No config found, running in demo mode');
 }
 
 // 현재 사용자 상태
 let currentUser = null;
-const authListeners = [];
+const authListeners = new Set();
 
 export function onAuthChange(callback) {
-  authListeners.push(callback);
+  authListeners.add(callback);
+
   if (auth) {
-    onAuthStateChanged(auth, (user) => {
-      currentUser = user;
-      authListeners.forEach(cb => cb(user));
-    });
+    // 첫 번째 리스너만 onAuthStateChanged 등록
+    if (authListeners.size === 1) {
+      onAuthStateChanged(auth, (user) => {
+        currentUser = user;
+        authListeners.forEach(cb => cb(user));
+      });
+    } else {
+      // 이미 등록된 경우, 현재 상태로 즉시 콜백
+      callback(currentUser);
+    }
   }
+
   return () => {
-    const idx = authListeners.indexOf(callback);
-    if (idx > -1) authListeners.splice(idx, 1);
+    authListeners.delete(callback);
   };
 }
 

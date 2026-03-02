@@ -1,0 +1,32 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 암호화 키: 인증된 사용자 + 해당 교재 접근 권한이 있는 경우만 읽기 허용
+    match /encryptionKeys/{bookId} {
+      allow read: if request.auth != null &&
+        exists(/databases/$(database)/documents/userAccess/$(request.auth.uid + '_' + bookId));
+      allow write: if false; // 키는 Admin SDK로만 관리
+    }
+
+    // 접근 코드: 인증된 사용자만 읽기 (코드 검증용)
+    match /accessCodes/{codeId} {
+      allow read: if request.auth != null;
+      allow write: if false; // 코드는 Admin SDK로만 관리 (currentUses 업데이트 제외)
+    }
+
+    // 사용자 접근 기록: 자신의 것만 읽기/생성 허용
+    match /userAccess/{docId} {
+      allow read: if request.auth != null &&
+        resource.data.userId == request.auth.uid;
+      allow create: if request.auth != null &&
+        request.resource.data.userId == request.auth.uid;
+      allow update, delete: if false; // 수정/삭제는 Admin만
+    }
+
+    // 기본: 모든 접근 거부
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

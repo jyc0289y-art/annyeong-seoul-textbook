@@ -2,11 +2,14 @@
  * PDF 복호화 서비스
  * AES-256-GCM 암호화된 PDF를 브라우저에서 복호화
  * Web Crypto API 사용 (브라우저 내장, 외부 라이브러리 불필요)
+ *
+ * 키 로드 순서:
+ * 1. Firestore (인증된 사용자 + 접근 권한 필요)
+ * 2. demo-keys.json 폴백 (개발/데모용)
  */
 import { getCurrentUser, isFirebaseConfigured } from '../firebase.js';
 
-// 데모 모드용 키 (Firebase 미설정 시 사용)
-// 실제 운영에서는 Firestore에서 키를 가져옴
+// 데모 모드용 키 캐시
 let demoKeys = null;
 
 /**
@@ -23,22 +26,37 @@ function base64ToArrayBuffer(base64) {
 
 /**
  * Firestore에서 복호화 키 가져오기
+ * 보안 규칙: 인증 + userAccess 문서 존재 확인
  */
 async function getKeyFromFirestore(bookId) {
-  // Firebase가 설정되면 여기서 Firestore 조회
-  // const { getFirestore, doc, getDoc } = await import('firebase/firestore');
-  // const db = getFirestore();
-  // const keyDoc = await getDoc(doc(db, 'encryptionKeys', bookId));
-  // return keyDoc.data();
+  try {
+    const { doc, getDoc } = await import('firebase/firestore');
+    const { db } = await import('../firebase.js');
 
-  // 아직 Firebase 미설정 — 데모 모드
-  return null;
+    if (!db) return null;
+
+    const keyDoc = await getDoc(doc(db, 'encryptionKeys', bookId));
+    if (keyDoc.exists()) {
+      console.log(`[Decrypt] Key loaded from Firestore for: ${bookId}`);
+      return keyDoc.data();
+    }
+
+    console.warn(`[Decrypt] No key found in Firestore for: ${bookId}`);
+    return null;
+  } catch (error) {
+    // permission-denied는 접근 권한이 없는 경우 (정상 동작)
+    if (error.code === 'permission-denied') {
+      console.warn(`[Decrypt] Firestore access denied for: ${bookId} (need valid access code)`);
+    } else {
+      console.error(`[Decrypt] Firestore error for: ${bookId}`, error.message);
+    }
+    return null;
+  }
 }
 
 /**
  * 데모 키 로드 (개발/테스트용)
- * 빌드 시 생성된 keys.json을 public에 배포하지 않고
- * 환경변수나 별도 경로에서 로드
+ * 빌드 시 생성된 demo-keys.json에서 로드
  */
 async function getDemoKey(bookId) {
   if (!demoKeys) {
@@ -67,6 +85,7 @@ export async function decryptPdf(bookId) {
     keyData = await getKeyFromFirestore(bookId);
   }
 
+  // Firestore 실패 시 데모 키 폴백
   if (!keyData) {
     keyData = await getDemoKey(bookId);
   }
