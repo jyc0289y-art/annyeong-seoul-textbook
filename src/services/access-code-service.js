@@ -9,6 +9,8 @@
  */
 import { isFirebaseConfigured } from '../firebase.js';
 import { isAdminLoggedIn, isStudentViewEnabled } from './admin-service.js';
+import { withTimeout } from '../utils/fetch-with-timeout.js';
+import { getIsOffline } from '../utils/offline-manager.js';
 
 /**
  * Firestore에서 접근 코드 검증
@@ -18,6 +20,12 @@ import { isAdminLoggedIn, isStudentViewEnabled } from './admin-service.js';
  * @returns {boolean} 검증 성공 여부
  */
 async function verifyCodeFirestore(bookId, code, userId) {
+  // 오프라인이면 Firestore 호출 건너뛰기
+  if (getIsOffline()) {
+    console.log(`[AccessCode] Offline — skipping Firestore verification`);
+    return false;
+  }
+
   try {
     const { collection, query, where, getDocs, doc, setDoc, updateDoc, increment, serverTimestamp } = await import('firebase/firestore');
     const { db } = await import('../firebase.js');
@@ -34,7 +42,8 @@ async function verifyCodeFirestore(bookId, code, userId) {
       where('active', '==', true)
     );
 
-    const snapshot = await getDocs(q);
+    // 5초 타임아웃 적용 (지하철 터널 등 대비)
+    const snapshot = await withTimeout(getDocs(q), 5000, 'verifyCode');
 
     if (snapshot.empty) {
       console.log(`[AccessCode] Code not found or inactive: ${code}`);
@@ -122,15 +131,25 @@ export async function checkAccess(bookId, userId) {
   }
 
   if (isFirebaseConfigured()) {
+    // 오프라인이면 Firestore 건너뛰고 로컬 확인
+    if (getIsOffline()) {
+      console.log(`[AccessCode] Offline — using local access check for: ${bookId}`);
+      return checkAccessLocal(bookId);
+    }
+
     try {
       const { doc, getDoc } = await import('firebase/firestore');
       const { db } = await import('../firebase.js');
 
       if (!db) return checkAccessLocal(bookId);
 
-      // Firestore에서 접근 권한 확인
+      // Firestore에서 접근 권한 확인 (5초 타임아웃)
       const accessDocId = `${userId}_${bookId}`;
-      const accessDoc = await getDoc(doc(db, 'userAccess', accessDocId));
+      const accessDoc = await withTimeout(
+        getDoc(doc(db, 'userAccess', accessDocId)),
+        5000,
+        'checkAccess'
+      );
 
       if (accessDoc.exists()) {
         const data = accessDoc.data();

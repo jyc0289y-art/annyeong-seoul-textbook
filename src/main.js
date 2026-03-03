@@ -3,11 +3,15 @@ import { renderCatalog } from './pages/catalog.js';
 import { renderViewer } from './pages/viewer.js';
 import { renderAdmin } from './pages/admin.js';
 import { installCopyrightGuard } from './components/copyright-guard.js';
+import { initOfflineManager } from './utils/offline-manager.js';
 
 const app = document.getElementById('app');
 
 // 저작권 보호 설치
 installCopyrightGuard();
+
+// 오프라인 감지 및 UI 초기화
+initOfflineManager();
 
 // 인증 상태 감시
 onAuthChange((user) => {

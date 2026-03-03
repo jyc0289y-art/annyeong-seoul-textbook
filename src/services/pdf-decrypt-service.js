@@ -5,12 +5,70 @@
  *
  * 키 로드 순서:
  * 1. Firestore (인증된 사용자 + 접근 권한 필요)
- * 2. demo-keys.json 폴백 (개발/데모용)
+ * 2. IndexedDB 캐시 폴백 (오프라인 지원)
+ * 3. demo-keys.json 폴백 (개발/데모용)
  */
 import { getCurrentUser, isFirebaseConfigured } from '../firebase.js';
+import { withTimeout } from '../utils/fetch-with-timeout.js';
+import { getIsOffline } from '../utils/offline-manager.js';
 
 // 데모 모드용 키 캐시
 let demoKeys = null;
+
+// IndexedDB 키 캐시 (오프라인 지원)
+const KEY_CACHE_DB = 'sl_key_cache';
+const KEY_CACHE_STORE = 'keys';
+
+/**
+ * IndexedDB에서 캐시된 키 가져오기
+ */
+async function getCachedKey(bookId) {
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = indexedDB.open(KEY_CACHE_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(KEY_CACHE_STORE)) {
+          db.createObjectStore(KEY_CACHE_STORE);
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(KEY_CACHE_STORE, 'readonly');
+        const store = tx.objectStore(KEY_CACHE_STORE);
+        const getReq = store.get(bookId);
+        getReq.onsuccess = () => resolve(getReq.result || null);
+        getReq.onerror = () => resolve(null);
+      };
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
+/**
+ * IndexedDB에 키 캐시 저장
+ */
+async function setCachedKey(bookId, keyData) {
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = indexedDB.open(KEY_CACHE_DB, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(KEY_CACHE_STORE)) {
+          db.createObjectStore(KEY_CACHE_STORE);
+        }
+      };
+      req.onsuccess = () => {
+        const db = req.result;
+        const tx = db.transaction(KEY_CACHE_STORE, 'readwrite');
+        const store = tx.objectStore(KEY_CACHE_STORE);
+        store.put(keyData, bookId);
+        tx.oncomplete = () => resolve();
+      };
+      req.onerror = () => resolve();
+    });
+  } catch { /* ignore */ }
+}
 
 /**
  * Base64 문자열을 ArrayBuffer로 변환
@@ -29,24 +87,40 @@ function base64ToArrayBuffer(base64) {
  * 보안 규칙: 인증 + userAccess 문서 존재 확인
  */
 async function getKeyFromFirestore(bookId) {
+  // 오프라인이면 Firestore 호출 건너뛰기
+  if (getIsOffline()) {
+    console.log(`[Decrypt] Offline — skipping Firestore, trying cache for: ${bookId}`);
+    return null;
+  }
+
   try {
     const { doc, getDoc } = await import('firebase/firestore');
     const { db } = await import('../firebase.js');
 
     if (!db) return null;
 
-    const keyDoc = await getDoc(doc(db, 'encryptionKeys', bookId));
+    // 5초 타임아웃 적용 (지하철 터널 등 대비)
+    const keyDoc = await withTimeout(
+      getDoc(doc(db, 'encryptionKeys', bookId)),
+      5000,
+      'getKey'
+    );
+
     if (keyDoc.exists()) {
-      console.log(`[Decrypt] Key loaded from Firestore for: ${bookId}`);
-      return keyDoc.data();
+      const data = keyDoc.data();
+      // 성공 시 IndexedDB에 캐시 저장 (다음 오프라인 대비)
+      await setCachedKey(bookId, data);
+      console.log(`[Decrypt] Key loaded from Firestore (cached) for: ${bookId}`);
+      return data;
     }
 
     console.warn(`[Decrypt] No key found in Firestore for: ${bookId}`);
     return null;
   } catch (error) {
-    // permission-denied는 접근 권한이 없는 경우 (정상 동작)
     if (error.code === 'permission-denied') {
       console.warn(`[Decrypt] Firestore access denied for: ${bookId} (need valid access code)`);
+    } else if (error.message?.includes('TIMEOUT')) {
+      console.warn(`[Decrypt] Firestore timeout for: ${bookId}, trying cache`);
     } else {
       console.error(`[Decrypt] Firestore error for: ${bookId}`, error.message);
     }
@@ -85,13 +159,21 @@ export async function decryptPdf(bookId) {
     keyData = await getKeyFromFirestore(bookId);
   }
 
-  // Firestore 실패 시 데모 키 폴백
+  // Firestore 실패 시 IndexedDB 캐시 폴백 (오프라인 지원)
+  if (!keyData) {
+    keyData = await getCachedKey(bookId);
+    if (keyData) {
+      console.log(`[Decrypt] Key loaded from IndexedDB cache for: ${bookId}`);
+    }
+  }
+
+  // 캐시에도 없으면 데모 키 폴백
   if (!keyData) {
     keyData = await getDemoKey(bookId);
   }
 
   if (!keyData) {
-    throw new Error('DECRYPTION_KEY_NOT_FOUND');
+    throw new Error(getIsOffline() ? 'OFFLINE_NO_CACHED_KEY' : 'DECRYPTION_KEY_NOT_FOUND');
   }
 
   // 2. 암호화된 파일 다운로드

@@ -7,6 +7,7 @@ import { verifyAccessCode, checkAccess, grantAccess } from '../services/access-c
 import { isAdminLoggedIn } from '../services/admin-service.js';
 import { initAnnotationCanvas, resizeAnnotationCanvas, loadPageAnnotations, saveCurrentAnnotations, isAnnotationModeActive } from '../components/annotation-canvas.js';
 import { createAnnotationToolbar, destroyAnnotationToolbar } from '../components/annotation-toolbar.js';
+import { getIsOffline, onReconnect } from '../utils/offline-manager.js';
 
 // PDF.js worker 설정
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
@@ -90,6 +91,36 @@ export async function renderViewer(container, params) {
     }
   } catch (err) {
     console.error('PDF load error:', err);
+
+    // 오프라인 상태 전용 에러 메시지
+    if (getIsOffline() || err.message?.includes('OFFLINE') || err.message?.includes('TIMEOUT')) {
+      document.getElementById('viewer-body').innerHTML =
+        `<p style="padding:40px;text-align:center;color:var(--text-secondary)">
+          <span style="font-size:1.5rem">📶</span><br><br>
+          인터넷 연결이 없습니다.<br>
+          <span style="font-size:0.85rem;color:#666">
+            이전에 열어본 교재는 오프라인에서도 볼 수 있습니다.<br>
+            처음 여는 교재는 인터넷 연결이 필요합니다.<br><br>
+            지하철 터널을 지나면 자동으로 다시 연결됩니다.
+          </span>
+        </p>`;
+
+      // 네트워크 복구 시 자동 재시도
+      const unsubscribe = onReconnect(async () => {
+        unsubscribe();
+        console.log('[Viewer] Network restored, retrying PDF load');
+        try {
+          if (hasFullAccess) {
+            await loadFullPdf(bookId, startPage);
+          } else {
+            await loadPreview(bookId, startPage);
+          }
+        } catch (retryErr) {
+          console.error('[Viewer] Retry failed:', retryErr);
+        }
+      });
+      return;
+    }
 
     // 폴백: 원본 PDF 직접 로드 (로컬 개발용)
     try {
